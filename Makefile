@@ -6,7 +6,7 @@ PREFIX ?= /usr/local
 all: sw
 
 sw: sw.c
-	$(CC) $(CFLAGS) sw.c -o sw
+	$(CC) $(CFLAGS) $(LDFLAGS) sw.c -o sw
 
 install: sw
 	install -Dm755 sw $(DESTDIR)$(PREFIX)/bin/sw
