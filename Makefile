@@ -1,5 +1,6 @@
 CC ?= gcc
 CFLAGS ?= -O2 -Wall -Wextra
+LDFLAGS ?= -Wl,-z,relro,-z,now
 PREFIX ?= /usr/local
 
 all: sw
