@@ -1,28 +1,24 @@
-# sw
+# ![swtch](assets/swtch.svg)
 
-A minimal terminal stopwatch written in pure C.
-
-```
-[RUNNING] 00:00:12.345   laps: 3   [space] pause  [l] lap  [r] reset  [q] quit
-```
-
-## Build
-
-```bash
-make
-```
+a minimal terminal stopwatch.
 
 ## Install
 
+On Arch Linux:
+
 ```bash
-sudo make install
+yay -S swtch
 ```
 
-## Usage
+From source:
 
-| Key     | Action        |
-|---------|---------------|
-| `space` | Pause / resume |
-| `l`     | Record lap    |
-| `r`     | Reset         |
-| `q`     | Quit          |
+```bash
+make && sudo make install
+```
+
+## Keys
+
+    space   pause / resume
+    l       lap
+    r       reset
+    q       quit

@@ -1,4 +1,4 @@
-/* sw -- A minimal terminal stopwatch.
+/* swtch -- A minimal terminal stopwatch.
  *
  * MIT LICENSE
  *
@@ -34,6 +34,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <time.h>
+#include <sys/ioctl.h>
 
 /* Terminal */
 
@@ -72,6 +73,14 @@ static void term_raw(void) {
 static void handle_sigint(int sig) {
     (void)sig;
     exit(0);
+}
+
+/* terminal width via ioctl, handles resize and zoom with no signal handling. */
+static int term_width(void) {
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
+        return ws.ws_col;
+    return 80;
 }
 
 /* Time */
@@ -137,19 +146,25 @@ static void sw_reset(sw_t *sw) {
 
 /* Display */
 
-/* Overwrite the current line in place using \r. This avoids scrolling and
- * keeps the lap history above untouched. fflush is mandatory here because
- * stdout is line-buffered by default and \r never triggers a flush. */
+/* build into a buffer first, then clamp to terminal width so the line
+ * never wraps and \r always lands on the correct row. */
 static void display(const sw_t *sw) {
     int64_t ms = sw_read(sw);
     int h = ms / 3600000; ms %= 3600000;
     int m = ms / 60000; ms %= 60000;
     int s = ms / 1000; ms %= 1000;
 
-    printf("\r%s %02d:%02d:%02d.%03d   laps: %d"
-           "   [space] pause  [l] lap  [r] reset  [q] quit\e[K",
+    char buf[256];
+    int len = snprintf(buf, sizeof(buf),
+        "%s %02d:%02d:%02d.%03d   laps: %d"
+        "   [space] pause  [l] lap  [r] reset  [q] quit",
         sw->running ? "[RUNNING]" : "[STOPPED]",
         h, m, s, (int)ms, sw->laps);
+
+    int w = term_width();
+    if (len > w) len = w;
+
+    printf("\r%-*.*s", len, len, buf);
     fflush(stdout);
 }
 
@@ -172,7 +187,11 @@ int main(void) {
     sw_init(&sw);
     term_raw();
 
-    printf("sw -- minimal stopwatch\n");
+    printf("\n"
+           "   ______      __/ /______/ /_ \n"
+           "  / ___/ | /| / / __/ ___/ __ \\\n"
+           " (__  )| |/ |/ / /_/ /__/ / / /\n"
+           "/____/ |__/|__/\\__/\\___/_/ /_/ \n\n");
 
     while (1) {
         display(&sw);

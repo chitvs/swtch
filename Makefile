@@ -1,22 +1,22 @@
-CC ?= gcc
-CFLAGS ?= -O2 -Wall -Wextra
+CC      ?= gcc
+CFLAGS  ?= -O2 -Wall -Wextra
 LDFLAGS ?= -Wl,-z,relro,-z,now
-PREFIX ?= /usr/local
+PREFIX  ?= /usr/local
 
-all: sw
+all: swtch
 
-sw: sw.c
-	$(CC) $(CFLAGS) $(LDFLAGS) sw.c -o sw
+swtch: src/swtch.c
+	$(CC) $(CFLAGS) $(LDFLAGS) src/swtch.c -o swtch
 
-install: sw
-	install -Dm755 sw $(DESTDIR)$(PREFIX)/bin/sw
-	install -Dm644 LICENSE $(DESTDIR)$(PREFIX)/share/licenses/sw-stopwatch/LICENSE
+install: swtch
+	install -Dm755 swtch $(DESTDIR)$(PREFIX)/bin/swtch
+	install -Dm644 LICENSE $(DESTDIR)$(PREFIX)/share/licenses/swtch/LICENSE
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/sw
-	rm -f $(DESTDIR)$(PREFIX)/share/licenses/sw-stopwatch/LICENSE
+	rm -f $(DESTDIR)$(PREFIX)/bin/swtch
+	rm -f $(DESTDIR)$(PREFIX)/share/licenses/swtch/LICENSE
 
 clean:
-	rm -f sw
+	rm -f swtch
 
 .PHONY: all install uninstall clean
