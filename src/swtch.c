@@ -40,6 +40,9 @@
 #include <time.h>
 #include <sys/ioctl.h>
 
+/* global flag for safe asynchronous signal handling */
+static volatile sig_atomic_t quit_flag = 0;
+
 /* Terminal */
 
 /* The original terminal attributes, saved before we touch anything.
@@ -72,11 +75,11 @@ static void term_raw(void) {
     printf("\e[?25l");
 }
 
-/* Ctrl-C would normally leave the terminal in raw mode. We catch SIGINT
- * so that atexit() still fires and term_restore() gets called. */
+/* We catch SIGINT to set a flag rather than calling exit() directly, 
+ * which is unsafe to do inside a signal handler. */
 static void handle_sigint(int sig) {
     (void)sig;
-    exit(0);
+    quit_flag = 1;
 }
 
 /* terminal width via ioctl, handles resize and zoom with no signal handling. */
@@ -167,7 +170,7 @@ static void sw_reset(sw_t *sw) {
 
 /* build into a buffer first, then clamp to terminal width so the line
  * never wraps and \r always lands on the correct row. */
-static void display(const sw_t *sw) {
+static void display(const sw_t *sw, int term_w) {
     sw_time_t t = sw_format(sw_read(sw));
 
     char buf[256];
@@ -177,7 +180,15 @@ static void display(const sw_t *sw) {
         sw->running ? "[RUNNING]" : "[STOPPED]",
         t.h, t.m, t.s, t.ms, sw->laps);
 
-    printf("\r%-*.*s", len, len, buf);
+    /* clamp string length to terminal width to absolutely prevent line wrapping */
+    if (len > term_w) {
+        len = term_w;
+    }
+
+    /* \r moves to the start of the line.
+     * \e[K clears the old line to prevent ghost characters.
+     * %.*s prints exactly 'len' characters. */
+    printf("\r\e[K%.*s", len, buf);
     fflush(stdout);
 }
 
@@ -193,6 +204,13 @@ static void print_logo(void) {
 /* Main loop */
 
 int main(void) {
+    /* fail immediately if terminal is too small */
+    if (term_width() < MIN_WIDTH) {
+        printf("Error: Terminal too small. Needs at least %d columns.\n", MIN_WIDTH);
+        printf("Please resize your window and run swtch again.\n");
+        return 1;
+    }
+
     /* sigaction() is the correct POSIX way to handle signals. Unlike the
      * deprecated signal(), its behavior is well-defined across all platforms:
      * the handler is not reset after the first call, and interrupted syscalls
@@ -211,50 +229,21 @@ int main(void) {
 
     print_logo();
 
-    /* define the two states of the program */
-    enum { STATE_RUNNING, STATE_SIZE_ERROR } state = STATE_RUNNING;
-
     while (1) {
+        /* check if a signal (like Ctrl-C) requested us to quit */
+        if (quit_flag) {
+            exit(0);
+        }
 
-        /* if the terminal is too small, we don't start the timer*/
         int w = term_width();
 
+        /* if the user zooms or shrinks the window, abort. */
         if (w < MIN_WIDTH) {
-            if (state == STATE_RUNNING) {
-                /* transition to error state: pause and clear the ENTIRE screen */
-                if (sw.running) sw_pause(&sw);
-                
-                /* \e[2J clears the whole screen, \e[H moves the cursor to top-left 
-                 * \e[?25l ensures the cursor stays hidden */
-                printf("\e[2J\e[H\e[?25l");
-                printf("\n  [!] Terminal too small. Please resize the window to continue.\n");
-                fflush(stdout);
-                
-                state = STATE_SIZE_ERROR;
-            }
-
-            /* we still need to call read() here. 
-             * This maintains our 100ms loop delay (VTIME=1) and 
-             * allows the user to press 'q' to quit if they get stuck. */
-            char c;
-            if (read(STDIN_FILENO, &c, 1) == 1) {
-                if (c == 'q') exit(0);
-            }
-            
-            /* skip the rest of the loop so we don't draw the stopwatch */
-            continue; 
-        } else {
-            /* if the terminal gets large again, restore the UI */
-            if (state == STATE_SIZE_ERROR) {
-                /* clear the screen of the error message and ensure cursor is hidden */
-                printf("\e[2J\e[H\e[?25l");
-                /* reprint the logo */
-                print_logo();
-                state = STATE_RUNNING;
-            }
-            
-            display(&sw);
+            printf("\r\e[K\n[!] Terminal resized too small (%d < %d). Aborting.\n", w, MIN_WIDTH);
+            exit(1);
         }
+
+        display(&sw, w);
 
         /* VTIME=1 makes read() block for up to 100ms before returning 0.
          * no sleep() or timer needed. */
@@ -263,23 +252,19 @@ int main(void) {
 
         switch (c) {
         case ' ':
-            if (state == STATE_RUNNING) {
-                sw.running ? sw_pause(&sw) : sw_resume(&sw);
-            }
+            sw.running ? sw_pause(&sw) : sw_resume(&sw);
             break;
         case 'l':
-            if (state == STATE_RUNNING) {
-                /* Print the lap above the running display line. We move to a
-                 * new line first so the lap is not overwritten on the next \r. */
-                sw.laps++;
-                {
-                    sw_time_t t = sw_format(sw_read(&sw));
-                    /* \r moves to the start of the stopwatch line.
-                     * \e[K clears it entirely so we don't leave a trail.
-                     * Then we print the lap and move to a new line. */
-                    printf("\r\e[K  lap %d: %02d:%02d:%02d.%03d\n",
-                        sw.laps, t.h, t.m, t.s, t.ms);
-                }
+            /* Print the lap above the running display line. We move to a
+             * new line first so the lap is not overwritten on the next \r. */
+            sw.laps++;
+            {
+                sw_time_t t = sw_format(sw_read(&sw));
+                /* \r moves to the start of the stopwatch line.
+                 * \e[K clears it entirely so we don't leave a trail.
+                 * Then we print the lap and move to a new line. */
+                printf("\r\e[K  lap %d: %02d:%02d:%02d.%03d\n",
+                    sw.laps, t.h, t.m, t.s, t.ms);
             }
             break;
         case 'r':
