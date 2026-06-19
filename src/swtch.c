@@ -28,6 +28,9 @@
 #define _POSIX_C_SOURCE 200809L
 #define MIN_WIDTH 83
 
+/* 1 = running, 0 = stopped */
+#define INIT_STATE 1
+
 #include <stdio.h>
 #include <stdint.h>
 #include <termios.h>
@@ -123,7 +126,6 @@ static inline int64_t sw_read(const sw_t *sw) {
 static void sw_init(sw_t *sw) {
     sw->start = now_ms();
     sw->elapsed = 0;
-    sw->running = 1;
     sw->laps = 0;
 }
 
@@ -142,7 +144,9 @@ static void sw_resume(sw_t *sw) {
 }
 
 static void sw_reset(sw_t *sw) {
+    int was_running = sw->running;
     sw_init(sw);
+    sw->running = was_running;
 }
 
 /* Display */
@@ -190,7 +194,7 @@ int main(void) {
     /* kill <pid> must also restore the terminal */
     sigaction(SIGTERM, &sa, NULL);
 
-    sw_t sw;
+    sw_t sw = { .running = INIT_STATE };
     sw_init(&sw);
     term_raw();
 
