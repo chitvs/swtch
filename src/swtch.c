@@ -26,6 +26,7 @@
 /* Expose CLOCK_MONOTONIC and clock_gettime() from <time.h>.
  * Without this, strict C99/C11 mode hides POSIX extensions. */
 #define _POSIX_C_SOURCE 200809L
+#define MIN_WIDTH 83
 
 #include <stdio.h>
 #include <stdint.h>
@@ -161,11 +162,17 @@ static void display(const sw_t *sw) {
         sw->running ? "[RUNNING]" : "[STOPPED]",
         h, m, s, (int)ms, sw->laps);
 
-    int w = term_width();
-    if (len > w) len = w;
-
     printf("\r%-*.*s", len, len, buf);
     fflush(stdout);
+}
+
+/* Display the Logo */
+static void print_logo(void) {
+    printf("\n"
+           "   ______      __/ /______/ /_ \n"
+           "  / ___/ | /| / / __/ ___/ __ \\\n"
+           " (__  )| |/ |/ / /_/ /__/ / / /\n"
+           "/____/ |__/|__/\\__/\\___/_/ /_/ \n\n");
 }
 
 /* Main loop */
@@ -187,14 +194,51 @@ int main(void) {
     sw_init(&sw);
     term_raw();
 
-    printf("\n"
-           "   ______      __/ /______/ /_ \n"
-           "  / ___/ | /| / / __/ ___/ __ \\\n"
-           " (__  )| |/ |/ / /_/ /__/ / / /\n"
-           "/____/ |__/|__/\\__/\\___/_/ /_/ \n\n");
+    print_logo();
+
+    /* define the two states of the program */
+    enum { STATE_RUNNING, STATE_SIZE_ERROR } state = STATE_RUNNING;
 
     while (1) {
-        display(&sw);
+
+        /* if the terminal is too small, we don't start the timer*/
+        int w = term_width();
+
+        if (w < MIN_WIDTH) {
+            if (state == STATE_RUNNING) {
+                /* transition to error state: pause and clear the ENTIRE screen */
+                if (sw.running) sw_pause(&sw);
+                
+                /* \e[2J clears the whole screen, \e[H moves the cursor to top-left */
+                printf("\e[2J\e[H");
+                printf("\n  [!] Terminal too small. Please resize the window to continue.\n");
+                fflush(stdout);
+                
+                state = STATE_SIZE_ERROR;
+            }
+
+            /* we still need to call read() here. 
+             * This maintains our 100ms loop delay (VTIME=1) and 
+             * allows the user to press 'q' to quit if they get stuck. */
+            char c;
+            if (read(STDIN_FILENO, &c, 1) == 1) {
+                if (c == 'q') exit(0);
+            }
+            
+            /* skip the rest of the loop so we don't draw the stopwatch */
+            continue; 
+        } else {
+            /* if the terminal gets large again, restore the UI */
+            if (state == STATE_SIZE_ERROR) {
+                /* clear the screen of the error message */
+                printf("\e[2J\e[H");
+                /* reprint the logo */
+                print_logo();
+                state = STATE_RUNNING;
+            }
+            
+            display(&sw);
+        }
 
         /* VTIME=1 makes read() block for up to 100ms before returning 0.
          * no sleep() or timer needed. */
@@ -203,22 +247,26 @@ int main(void) {
 
         switch (c) {
         case ' ':
-            sw.running ? sw_pause(&sw) : sw_resume(&sw);
+            if (state == STATE_RUNNING) {
+                sw.running ? sw_pause(&sw) : sw_resume(&sw);
+            }
             break;
         case 'l':
-            /* Print the lap above the running display line. We move to a
-             * new line first so the lap is not overwritten on the next \r. */
-            sw.laps++;
-            {
-                int64_t t = sw_read(&sw);
-                int lh = t / 3600000; t %= 3600000;
-                int lm = t / 60000; t %= 60000;
-                int ls = t / 1000; t %= 1000;
-                /* \r moves to the start of the stopwatch line.
-                 * \e[K clears it entirely so we don't leave a trail.
-                 * Then we print the lap and move to a new line. */
-                printf("\r\e[K  lap %d: %02d:%02d:%02d.%03d\n",
-                    sw.laps, lh, lm, ls, (int)t);
+            if (state == STATE_RUNNING) {
+                /* Print the lap above the running display line. We move to a
+                 * new line first so the lap is not overwritten on the next \r. */
+                sw.laps++;
+                {
+                    int64_t t = sw_read(&sw);
+                    int lh = t / 3600000; t %= 3600000;
+                    int lm = t / 60000; t %= 60000;
+                    int ls = t / 1000; t %= 1000;
+                    /* \r moves to the start of the stopwatch line.
+                     * \e[K clears it entirely so we don't leave a trail.
+                     * Then we print the lap and move to a new line. */
+                    printf("\r\e[K  lap %d: %02d:%02d:%02d.%03d\n",
+                        sw.laps, lh, lm, ls, (int)t);
+                }
             }
             break;
         case 'r':
