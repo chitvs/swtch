@@ -123,6 +123,20 @@ static inline int64_t sw_read(const sw_t *sw) {
     return sw->elapsed + (sw->running ? now_ms() - sw->start : 0);
 }
 
+/* Time formatting helper */
+typedef struct {
+    int h, m, s, ms;
+} sw_time_t;
+
+static inline sw_time_t sw_format(int64_t total_ms) {
+    sw_time_t t;
+    t.h = total_ms / 3600000; total_ms %= 3600000;
+    t.m = total_ms / 60000; total_ms %= 60000;
+    t.s = total_ms / 1000; total_ms %= 1000;
+    t.ms = total_ms;
+    return t;
+}
+
 static void sw_init(sw_t *sw) {
     sw->start = now_ms();
     sw->elapsed = 0;
@@ -154,17 +168,14 @@ static void sw_reset(sw_t *sw) {
 /* build into a buffer first, then clamp to terminal width so the line
  * never wraps and \r always lands on the correct row. */
 static void display(const sw_t *sw) {
-    int64_t ms = sw_read(sw);
-    int h = ms / 3600000; ms %= 3600000;
-    int m = ms / 60000; ms %= 60000;
-    int s = ms / 1000; ms %= 1000;
+    sw_time_t t = sw_format(sw_read(sw));
 
     char buf[256];
     int len = snprintf(buf, sizeof(buf),
         "%s %02d:%02d:%02d.%03d   laps: %d"
         "   [space] pause  [l] lap  [r] reset  [q] quit",
         sw->running ? "[RUNNING]" : "[STOPPED]",
-        h, m, s, (int)ms, sw->laps);
+        t.h, t.m, t.s, t.ms, sw->laps);
 
     printf("\r%-*.*s", len, len, buf);
     fflush(stdout);
@@ -213,8 +224,9 @@ int main(void) {
                 /* transition to error state: pause and clear the ENTIRE screen */
                 if (sw.running) sw_pause(&sw);
                 
-                /* \e[2J clears the whole screen, \e[H moves the cursor to top-left */
-                printf("\e[2J\e[H");
+                /* \e[2J clears the whole screen, \e[H moves the cursor to top-left 
+                 * \e[?25l ensures the cursor stays hidden */
+                printf("\e[2J\e[H\e[?25l");
                 printf("\n  [!] Terminal too small. Please resize the window to continue.\n");
                 fflush(stdout);
                 
@@ -234,8 +246,8 @@ int main(void) {
         } else {
             /* if the terminal gets large again, restore the UI */
             if (state == STATE_SIZE_ERROR) {
-                /* clear the screen of the error message */
-                printf("\e[2J\e[H");
+                /* clear the screen of the error message and ensure cursor is hidden */
+                printf("\e[2J\e[H\e[?25l");
                 /* reprint the logo */
                 print_logo();
                 state = STATE_RUNNING;
@@ -261,15 +273,12 @@ int main(void) {
                  * new line first so the lap is not overwritten on the next \r. */
                 sw.laps++;
                 {
-                    int64_t t = sw_read(&sw);
-                    int lh = t / 3600000; t %= 3600000;
-                    int lm = t / 60000; t %= 60000;
-                    int ls = t / 1000; t %= 1000;
+                    sw_time_t t = sw_format(sw_read(&sw));
                     /* \r moves to the start of the stopwatch line.
                      * \e[K clears it entirely so we don't leave a trail.
                      * Then we print the lap and move to a new line. */
                     printf("\r\e[K  lap %d: %02d:%02d:%02d.%03d\n",
-                        sw.laps, lh, lm, ls, (int)t);
+                        sw.laps, t.h, t.m, t.s, t.ms);
                 }
             }
             break;
