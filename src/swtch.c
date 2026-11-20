@@ -52,7 +52,7 @@ static struct termios orig_termios;
 static void term_restore(void) {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
     /* cursor back on */
-    printf("\e[?25h\n");
+    printf("\033[?25h\n");
 }
 
 static void term_raw(void) {
@@ -72,7 +72,7 @@ static void term_raw(void) {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 
     /* hide cursor */
-    printf("\e[?25l");
+    printf("\033[?25l");
 }
 
 /* We catch SIGINT to set a flag rather than calling exit() directly, 
@@ -186,9 +186,9 @@ static void display(const sw_t *sw, int term_w) {
     }
 
     /* \r moves to the start of the line.
-     * \e[K clears the old line to prevent ghost characters.
+     * \033[K clears the old line to prevent ghost characters.
      * %.*s prints exactly 'len' characters. */
-    printf("\r\e[K%.*s", len, buf);
+    printf("\r\033[K%.*s", len, buf);
     fflush(stdout);
 }
 
@@ -204,6 +204,12 @@ static void print_logo(void) {
 /* Main loop */
 
 int main(void) {
+    /* raw mode only works on a terminal, otherwise read() never blocks */
+    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO)) {
+        fprintf(stderr, "swtch: must be run in a terminal\n");
+        return 1;
+    }
+
     /* fail immediately if terminal is too small */
     if (term_width() < MIN_WIDTH) {
         printf("Error: Terminal too small. Needs at least %d columns.\n", MIN_WIDTH);
@@ -239,7 +245,7 @@ int main(void) {
 
         /* if the user zooms or shrinks the window, abort. */
         if (w < MIN_WIDTH) {
-            printf("\r\e[K\n[!] Terminal resized too small (%d < %d). Aborting.\n", w, MIN_WIDTH);
+            printf("\r\033[K\n[!] Terminal resized too small (%d < %d). Aborting.\n", w, MIN_WIDTH);
             exit(1);
         }
 
@@ -261,9 +267,9 @@ int main(void) {
             {
                 sw_time_t t = sw_format(sw_read(&sw));
                 /* \r moves to the start of the stopwatch line.
-                 * \e[K clears it entirely so we don't leave a trail.
+                 * \033[K clears it entirely so we don't leave a trail.
                  * Then we print the lap and move to a new line. */
-                printf("\r\e[K  lap %d: %02d:%02d:%02d.%03d\n",
+                printf("\r\033[K  lap %d: %02d:%02d:%02d.%03d\n",
                     sw.laps, t.h, t.m, t.s, t.ms);
             }
             break;
