@@ -10,6 +10,12 @@ On Arch Linux:
 yay -S swtch
 ```
 
+With Nix:
+
+```
+nix run github:chitvs/swtch
+```
+
 From source:
 
 ```bash
